@@ -5,6 +5,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -77,6 +78,19 @@ class TimeDepositCalculatorTest {
         calculator.updateBalance(List.of(deposit));
 
         assertThat(deposit.getBalance()).isEqualTo(1000.123 + 0.83);
+    }
+
+    @Test
+    void acceptsCustomRulesWithoutChangingTheCalculator() {
+        TimeDepositCalculator customCalculator = new TimeDepositCalculator(
+            Map.of("loyalty", deposit -> deposit.getBalance() >= 1000 ? 7.125 : 1.0));
+        TimeDeposit eligible = new TimeDeposit(1, "loyalty", 1200.0, 31);
+        TimeDeposit initialPeriod = new TimeDeposit(2, "loyalty", 1200.0, 30);
+
+        customCalculator.updateBalance(List.of(eligible, initialPeriod));
+
+        assertThat(eligible.getBalance()).isEqualTo(1207.13);
+        assertThat(initialPeriod.getBalance()).isEqualTo(1200.0);
     }
 
     @Test
