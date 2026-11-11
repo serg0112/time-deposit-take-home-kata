@@ -1,0 +1,81 @@
+openapi: 3.0.3
+info:
+  title: Time Deposit API
+  version: 1.0.0
+  description: >-
+    Each POST applies one monthly interest calculation to every stored deposit.
+    Repeated requests apply interest again; days and withdrawal history are unchanged.
+servers:
+  - url: http://localhost:8080
+paths:
+  /time-deposits:
+    get:
+      operationId: getTimeDeposits
+      summary: Retrieve all deposits and their withdrawal history
+      responses:
+        '200':
+          description: Deposits ordered by id, with withdrawals ordered by id; an empty database returns [].
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TimeDeposit'
+  /time-deposits/update-balances:
+    post:
+      operationId: updateBalances
+      summary: Apply one monthly interest update to every deposit atomically
+      description: >-
+        No request body. Annual rates are divided by 12, matching the shared calculator.
+        All plans earn no interest through day 30. Basic earns 1% annually from day 31;
+        student earns 3% on days 31-365; premium earns 5% from day 46.
+        Interest is rounded to two decimals using the legacy double-based HALF_UP calculation.
+        This operation is deliberately not idempotent.
+      responses:
+        '204':
+          description: All balances committed successfully; no response body.
+components:
+  schemas:
+    TimeDeposit:
+      type: object
+      required: [id, planType, balance, days, withdrawals]
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        planType:
+          type: string
+          description: Case-sensitive plan name; unknown plans receive no interest.
+          example: basic
+        balance:
+          type: number
+          description: Decimal balance; no additional rounding is applied to the existing balance.
+          example: 1201.00
+        days:
+          type: integer
+          format: int32
+          example: 31
+        withdrawals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Withdrawal'
+    Withdrawal:
+      type: object
+      required: [id, timeDepositId, amount, date]
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        timeDepositId:
+          type: integer
+          format: int32
+          example: 1
+        amount:
+          type: number
+          example: 50.25
+        date:
+          type: string
+          format: date
+          example: '2026-01-15'
