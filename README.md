@@ -1,5 +1,8 @@
 # Time Deposit Refactoring Kata - Take-Home Assignment
 
+**Java solution:** see [java/README.md](java/README.md) for setup, API calls, design decisions and verification.
+The AI workflow and project-specific instructions are documented in [java/AI_NOTES.md](java/AI_NOTES.md) and [AGENTS.md](AGENTS.md).
+
 ## XA Bank Time Deposit
 
 ### Context
