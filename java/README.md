@@ -1,6 +1,6 @@
 # Java solution
 
-Java 17+, Spring Boot, PostgreSQL, Flyway and JDBC. There are exactly two application API routes:
+Java 17+, Spring Boot, Spring Data JPA, PostgreSQL and Flyway. There are exactly two application API routes:
 
 | Method | Path | Result |
 | --- | --- | --- |
@@ -122,23 +122,40 @@ Compose preserves the database volume between runs.
 
 ## Design and assumptions
 
-- **Small hexagonal design:** `TimeDeposit`, `TimeDepositCalculator` and `InterestRule` are the domain.
-  `application/` contains the service, repository port and read models. `adapter/rest/` handles HTTP;
-  `adapter/persistence/` implements the port using JDBC. The Spring Boot entry point wires them together.
-  Domain and application classes have no Spring, HTTP or JDBC dependencies.
+- **Application structure:** hexagonal. `domain/` holds the shared calculation model
+  `TimeDeposit`, the `InterestRule` interface and `TimeDepositCalculator`;
+  `application/TimeDepositService` orchestrates the use cases; `adapter/rest/` handles HTTP, and
+  `adapter/persistence/TimeDepositRepository` is the single Spring Data JPA repository
+  interface. Spring supplies its implementation. The service calls this interface directly and maps
+  entities to the shared calculation model and response records in `adapter/rest/response/`.
+  `TimeDepositCalculator` and the application service are registered with `@Service`; no separate
+  configuration class is needed. Interest calculations
+  remain separate from HTTP and persistence logic.
+- **Model conventions:** response DTOs are immutable records. JPA entities in
+  `adapter/persistence/data/` are regular classes with Lombok-generated getters and protected
+  no-argument constructors; only the balance has a setter. They have no generated relationship-based
+  equality or `toString`. Controllers/services use Lombok's required-argument constructor generation
+  for injection. The mutable calculation model `TimeDeposit` lives in `domain/`, separate from
+  persistence annotations. Lombok generates the original four-argument constructor,
+  getters and balance setter. These signatures are preserved; the moved packages require updated
+  imports. Converting the model to a record would remove the mutation required by `updateBalance`.
+  Lombok is a compile-time dependency and is excluded from the executable JAR.
 - **Extensible calculations:** a map of `InterestRule` functions replaces nested plan conditionals.
   The default constructor retains the existing plans. An additional constructor accepts rules for
   future plans or more complex calculations without changing the batch update algorithm.
-- **Transaction boundary:** the repository port updates a batch through a callback. The JDBC adapter
-  loads and locks rows, invokes the domain calculation and saves balances in one transaction. This
-  keeps transaction mechanics out of the domain/application and prevents lost updates. Any failure
-  rolls back the whole batch. A GET uses two queries for the entire result, avoiding per-deposit reads.
+- **Transaction boundary:** the service's `@Transactional` update loads and locks all deposits,
+  invokes the calculator and saves balances in one transaction. The Spring Data query uses
+  `PESSIMISTIC_WRITE` and orders locks by deposit id. Managed entities retain the locks until commit;
+  dirty checking persists their balance changes. A failure rolls back the whole batch. GET uses a
+  collection fetch join to retrieve deposits and withdrawals together, avoiding per-deposit reads.
+  The read method has no transaction annotation. Open Session in View is disabled; the fetch join
+  loads the data needed for response mapping.
 - **Rates and days:** despite the requirement's “monthly interest” wording, the working calculator
   divides the quoted rates by 12. That existing behavior takes precedence: basic is eligible from
   day 31; student on days 31-365 inclusive; premium from day 46. Days never advance on an update.
   Plan names remain case-sensitive; unknown plans earn no interest.
-- **Money and compatibility:** the shared `TimeDeposit` class is unchanged, including its `Double`
-  constructor, getter and setter. Interest still uses the original double arithmetic followed by
+- **Money and compatibility:** the `TimeDeposit` constructor and accessor signatures are preserved,
+  including its `Double` balance getter/setter. Interest still uses the original double arithmetic followed by
   `new BigDecimal(double).setScale(2, HALF_UP)`. A fully decimal rewrite would change existing results:
   a basic balance of 18 at day 31 earns 0.01, not 0.02. Repeated updates can also retain floating-point
   artifacts, e.g. 1000 becomes 1001.6600000000001 after two updates. Characterization tests preserve
@@ -148,8 +165,11 @@ Compose preserves the database volume between runs.
 - **Withdrawals:** existing balances are assumed to already reflect past withdrawals. History is
   returned as `{id, timeDepositId, amount, date}` and is never deducted again. No withdrawal/create
   endpoints were added. Dates use ISO `yyyy-MM-dd`; results and histories are ordered by id.
-- **Persistence:** Flyway creates the requested `timeDeposits` and `withdrawals` tables with required
-  columns and a foreign key. Quoted camel-case names match the assignment. Demo data is separate
+- **Persistence:** the single initial Flyway migration creates `time_deposits` and `withdrawals`
+  with required columns and a foreign key. Hibernate validates this schema rather than creating or altering it.
+  Database names use lowercase `snake_case`, including `plan_type` and `time_deposit_id`; JSON keeps
+  `planType` and `timeDepositId` as specified by the contract. JPA entities are separate
+  from the shared `TimeDeposit` class and are never returned from controllers. Demo data is separate
   from schema migrations. The local Compose credentials are development defaults; connection details
   can be overridden through `DB_URL`, `DB_USER`, `DB_PASSWORD`, `SERVER_ADDRESS` and `PORT`.
 - **Scope:** no authentication, input validation, custom exception handling or extra operations were
@@ -158,7 +178,9 @@ Compose preserves the database volume between runs.
 ## Verification
 
 The tests cover plan boundaries, legacy rounding, mixed batches, repeated accrual, extension rules,
-empty storage, full JSON shape, withdrawals, database persistence, fractional balances, transaction
-rollback, concurrent requests and agreement between OpenAPI paths and actual application routes.
+empty storage, full JSON shape, withdrawals without N+1 queries, database persistence, fractional
+balances, transaction rollback, concurrent requests and agreement between OpenAPI paths and actual
+application routes. JDBC is used only in integration tests to seed and inspect PostgreSQL independently
+of JPA's persistence context.
 
 See [AI_NOTES.md](AI_NOTES.md) for the development workflow and the final execution record.

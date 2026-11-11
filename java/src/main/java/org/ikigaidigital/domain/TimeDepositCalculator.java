@@ -1,10 +1,13 @@
-package org.ikigaidigital;
+package org.ikigaidigital.domain;
+
+import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
 
+@Service
 public class TimeDepositCalculator {
     private static final InterestRule NO_INTEREST = deposit -> 0;
     private final Map<String, InterestRule> rules;

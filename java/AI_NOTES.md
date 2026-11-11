@@ -1,33 +1,43 @@
-# AI-assisted development
+# AI-assisted workflow
 
 ## Tools and reproducible setup
 
-OpenAI Codex desktop was used as a coding assistant with repository access and shell execution.
-The project-specific agent instructions are checked in at [../AGENTS.md](../AGENTS.md); no additional
-project system prompts, custom agents or external agent framework are required.
+OpenAI Codex desktop was used with repository access and shell execution. The project brief,
+compatibility constraints, architecture boundaries and acceptance checks are maintained in
+[../AGENTS.md](../AGENTS.md). This is the repository's agent configuration; it requires no personal
+rules, private prompts or additional agent framework.
 
 To repeat the workflow, clone this fork, open its root in a coding assistant that reads `AGENTS.md`,
 install a JDK 17+ and Docker, and follow [README.md](README.md). Maven and dependency versions are
 defined by `pom.xml` and the Maven Wrapper; database and Swagger image tags are pinned in Compose.
 
-The task instructions given to the assistant were: read the requirements and existing code first;
-test existing behavior before refactoring; implement the Java solution using DRY and clean code
-without overengineering; preserve compatibility; and actually execute the documented build and
-run instructions, including API requests against a real database.
+The workflow is requirements analysis, characterization tests, focused implementation changes,
+design review and executable verification. Behavior changes require explicit justification;
+refactoring alone is not a reason to change financial results.
 
-## Where AI was used
+## Engineering ownership and AI assistance
 
-- Read the original source, tests and build files, including a static review for suspicious code.
-- Replaced the original tautological assertion with behavior tests before changing the calculator.
-- Used test failures to characterize binary floating-point results rather than silently changing them.
-- Extracted interest rules and implemented the application service, JDBC/REST adapters, migration,
-  OpenAPI contract and development configuration.
-- Added integration tests using actual PostgreSQL and HTTP instead of mocked repository behavior.
-- Reviewed dependency direction, duplicate logic and unused code, and wrote and checked run instructions.
+I used Codex as a coding assistant, with an explicit brief and acceptance criteria. I set the
+priorities: understand the requirements and existing behavior first, establish a test safety net,
+preserve compatibility, and keep the design small. I also required the documented setup to be
+executed against a running application and database, rather than accepted from documentation alone.
 
-AI was useful for implementing and testing the routine adapters and for systematically exploring
-boundary cases. Compatibility and financial precision were explicit design decisions, not assumed
-from passing tests. The shared `TimeDeposit` class remains unchanged.
+I questioned the use of `Double` for money and discussed the compatibility implications of replacing
+it with `BigDecimal`. The chosen approach preserves the existing calculator's observable results
+while using decimal types for persistence and API read models. The rationale and limitations are
+documented in [README.md](README.md#design-and-assumptions).
+
+Codex assisted with implementation, tests and documentation under these constraints. The working
+goal was faster routine implementation and broader exploration of boundary cases.
+The working
+agreement in [../AGENTS.md](../AGENTS.md) makes the scope, dependency boundaries and verification
+requirements explicit. Changes were checked through characterization tests, PostgreSQL-backed
+integration tests and a live walkthrough of the startup and API commands.
+
+Final review and acceptance remain my responsibility. Before submission, I review the diff, trace
+the calculation and transaction boundaries, assess whether the tests catch meaningful defects, and
+make sure I can explain the design and its trade-offs. The execution record below covers checks
+performed during development; it does not substitute for that review.
 
 ## Execution record
 
@@ -36,26 +46,35 @@ Engine 28.4.0 with Linux containers:
 
 - The characterization suite passed 29 tests against the original implementation before refactoring,
   with all calculator branches covered.
-- The final clean build, `./mvnw --batch-mode clean verify`, also ran successfully through Git Bash
-  on Windows. The PowerShell wrapper was used for the preceding test runs. All 30 unit tests and
-  seven PostgreSQL/HTTP integration tests passed, with no failures, errors or skipped tests.
+- The final JPA build, `.\mvnw.cmd --batch-mode clean verify`, passed all 30 unit tests and eight
+  PostgreSQL/HTTP integration tests, with no failures, errors or skipped tests. The POSIX wrapper
+  was also verified through Git Bash earlier in development.
 - JaCoCo reported all domain branches covered; the unexercised production lines are the main-method
   launcher, which was exercised separately by running the built JAR.
-- Ran `docker compose up -d --wait`, started the packaged application using the README's Java command,
-  and observed Flyway migrate an empty PostgreSQL database successfully.
-- Executed the README's PowerShell demo import and GET/POST/GET commands. The first GET returned all
-  five demo deposits and the historical withdrawal. POST returned 204 with no body; the next GET
-  returned balances 1201, 1203, 1205, 1200 and 1200, preserving days and withdrawal history.
+- Ran `docker compose up -d --wait` and started the packaged JPA application using the README's Java
+  command. Flyway migrations and Hibernate schema validation succeeded. Integration tests separately
+  exercised migration and startup against a fresh PostgreSQL database.
+- Executed the documented demo import and GET/POST/GET against a clean local database. POST returned
+  204; balances changed from 1200 each to 1201, 1203, 1205, 1200, 1200. Days and withdrawal history
+  remained unchanged. PostgreSQL metadata confirmed `time_deposits`, `plan_type` and `time_deposit_id`;
+  JSON retained the contract's camelCase fields.
+- The JPA integration tests verified atomic rollback, concurrent accrual and withdrawal fetching
+  without N+1 queries: 12 deposits with histories required at most two database statements.
 - Checked Swagger UI over HTTP: status 200, its initializer selected `./openapi.yaml`, and the served
   contract matched the checked-in file. A browser-style CORS preflight from `http://localhost:8081`
   was accepted for POST. Validated the complete OpenAPI document using
   `@apidevtools/swagger-parser` 13.1.0, installed outside the repository for this check.
-- Stopped the application and ran `docker compose down`, rebuilt, then restarted both. Flyway found
-  the schema up to date and all balances/history survived. Rerunning `demo.sql` inserted zero rows
-  and left the updated data unchanged.
+- Checked Swagger independently of the Java process: 24 asset requests succeeded (maximum 262 ms),
+  nginx configuration validation passed, and an internal HTTP request matched the mounted contract.
+  A normal Compose down/up completed successfully and preserved the five demo deposits.
+- The local setup uses one initial migration with snake_case database names. Repository access uses
+  one Spring Data interface; services are registered by annotations without an extra configuration class.
+- Follow-up on 2026-11-11: reorganized the existing classes into a hexagonal package layout — the
+  calculation model, `InterestRule` and `TimeDepositCalculator` in `domain/`, the use-case service
+  in `application/`, with the `adapter/rest/` and `adapter/persistence/` packages kept. Only file
+  locations, package declarations and imports changed; no class name, constructor, annotation or
+  calculation logic was modified. Re-running `.\mvnw.cmd --batch-mode clean verify` (OpenJDK 25,
+  `--release 17`) passed all 30 unit tests and the eight PostgreSQL/HTTP integration tests.
 
-Early test expectations were corrected to match observed legacy floating-point results, including
-1001.6600000000001 after repeated accrual and 1000.9530000000001 for an existing fractional balance.
-Initial Compose attempts hit transient Docker startup errors; retrying once the engine was ready
-succeeded. Native Linux/macOS and interactive Swagger button clicks were not exercised; the POSIX
+Native Linux/macOS and interactive Swagger button clicks were not exercised; the POSIX
 wrapper, served contract, CORS and actual API operations were checked as described above.

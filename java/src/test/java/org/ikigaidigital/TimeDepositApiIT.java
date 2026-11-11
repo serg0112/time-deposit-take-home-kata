@@ -1,6 +1,9 @@
 package org.ikigaidigital;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,12 +53,13 @@ class TimeDepositApiIT {
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper json;
     @Autowired RequestMappingHandlerMapping mappings;
+    @Autowired EntityManagerFactory entityManagerFactory;
 
     @BeforeEach
     void clearDatabase() {
-        jdbc.execute("DROP TRIGGER IF EXISTS reject_balance ON \"timeDeposits\"");
+        jdbc.execute("DROP TRIGGER IF EXISTS reject_balance ON time_deposits");
         jdbc.execute("DROP FUNCTION IF EXISTS reject_second_update()");
-        jdbc.execute("TRUNCATE withdrawals, \"timeDeposits\" RESTART IDENTITY");
+        jdbc.execute("TRUNCATE withdrawals, time_deposits RESTART IDENTITY");
     }
 
     @Test
@@ -65,7 +69,7 @@ class TimeDepositApiIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo("[]");
         assertThat(updateBalances().getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM \"timeDeposits\"", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM time_deposits", Integer.class)).isZero();
     }
 
     @Test
@@ -73,7 +77,7 @@ class TimeDepositApiIT {
         insertDeposit(2, "premium", "1200.123", 46);
         insertDeposit(1, "basic", "600.00", 31);
         jdbc.update("""
-            INSERT INTO withdrawals (id, "timeDepositId", amount, date) VALUES
+            INSERT INTO withdrawals (id, time_deposit_id, amount, date) VALUES
                 (8, 2, 12.34, DATE '2026-02-01'), (3, 2, 50.25, DATE '2026-01-15')
             """);
 
@@ -93,6 +97,29 @@ class TimeDepositApiIT {
     }
 
     @Test
+    void retrievesWithdrawalHistoriesWithoutPerDepositQueries() throws Exception {
+        for (int id = 1; id <= 12; id++) {
+            insertDeposit(id, "basic", "1200.00", 31);
+            jdbc.update("""
+                INSERT INTO withdrawals (time_deposit_id, amount, date) VALUES (?, 10.00, DATE '2026-01-15')
+                """, id);
+        }
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        try {
+            ResponseEntity<String> response = http.getForEntity("/time-deposits", String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(json.readTree(response.getBody())).hasSize(12);
+            // A collection fetch or two bulk queries are both acceptable; a query per deposit is not.
+            assertThat(statistics.getPrepareStatementCount()).isBetween(1L, 2L);
+        } finally {
+            statistics.setStatisticsEnabled(false);
+        }
+    }
+
+    @Test
     void updatesEveryBalanceAndPreservesAgePlansAndWithdrawalHistory() {
         insertDeposit(1, "basic", "1200.00", 31);
         insertDeposit(2, "student", "1200.00", 365);
@@ -101,11 +128,11 @@ class TimeDepositApiIT {
         insertDeposit(5, "basic", "1200.00", 30);
         insertDeposit(6, "basic", "18.00", 31);
         jdbc.update("""
-            INSERT INTO withdrawals ("timeDepositId", amount, date) VALUES (1, 50.25, DATE '2026-01-15')
+            INSERT INTO withdrawals (time_deposit_id, amount, date) VALUES (1, 50.25, DATE '2026-01-15')
             """);
         List<Map<String, Object>> historyBefore = jdbc.queryForList("SELECT * FROM withdrawals");
         List<Map<String, Object>> metadataBefore = jdbc.queryForList(
-            "SELECT id, \"planType\", days FROM \"timeDeposits\" ORDER BY id");
+            "SELECT id, plan_type, days FROM time_deposits ORDER BY id");
 
         ResponseEntity<String> response = updateBalances();
 
@@ -118,7 +145,7 @@ class TimeDepositApiIT {
         assertBalance(5, "1200.00");
         assertBalance(6, "18.01");
         assertThat(jdbc.queryForList("SELECT * FROM withdrawals")).isEqualTo(historyBefore);
-        assertThat(jdbc.queryForList("SELECT id, \"planType\", days FROM \"timeDeposits\" ORDER BY id"))
+        assertThat(jdbc.queryForList("SELECT id, plan_type, days FROM time_deposits ORDER BY id"))
             .isEqualTo(metadataBefore);
     }
 
@@ -144,7 +171,7 @@ class TimeDepositApiIT {
             END $$
             """);
         jdbc.execute("""
-            CREATE TRIGGER reject_balance BEFORE UPDATE ON "timeDeposits"
+            CREATE TRIGGER reject_balance BEFORE UPDATE ON time_deposits
             FOR EACH ROW EXECUTE FUNCTION reject_second_update()
             """);
 
@@ -212,12 +239,12 @@ class TimeDepositApiIT {
     }
 
     private void insertDeposit(int id, String plan, String balance, int days) {
-        jdbc.update("INSERT INTO \"timeDeposits\" (id, \"planType\", balance, days) VALUES (?, ?, ?, ?)",
+        jdbc.update("INSERT INTO time_deposits (id, plan_type, balance, days) VALUES (?, ?, ?, ?)",
             id, plan, new BigDecimal(balance), days);
     }
 
     private void assertBalance(int id, String expected) {
-        BigDecimal actual = jdbc.queryForObject("SELECT balance FROM \"timeDeposits\" WHERE id = ?",
+        BigDecimal actual = jdbc.queryForObject("SELECT balance FROM time_deposits WHERE id = ?",
             BigDecimal.class, id);
         assertThat(actual).isEqualByComparingTo(expected);
     }
