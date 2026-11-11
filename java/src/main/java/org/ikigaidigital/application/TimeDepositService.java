@@ -30,10 +30,12 @@ public class TimeDepositService {
         List<TimeDeposit> deposits = entities.stream().map(this::toTimeDeposit).toList();
         calculator.updateBalance(deposits);
         // Mapping preserves order, and the calculator changes balances without reordering the batch.
+        // BigDecimal.valueOf keeps the shortest decimal for the legacy double result (the calculator
+        // deliberately uses new BigDecimal(double) for rounding). The locked entities are managed, so
+        // dirty checking persists these balances when the transaction commits; no explicit save is needed.
         for (int index = 0; index < entities.size(); index++) {
             entities.get(index).setBalance(BigDecimal.valueOf(deposits.get(index).getBalance()));
         }
-        repository.saveAll(entities);
     }
 
     private TimeDeposit toTimeDeposit(TimeDepositEntity entity) {

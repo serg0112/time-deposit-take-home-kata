@@ -137,8 +137,12 @@ Compose preserves the database volume between runs.
   equality or `toString`. Controllers/services use Lombok's required-argument constructor generation
   for injection. The mutable calculation model `TimeDeposit` lives in `domain/`, separate from
   persistence annotations. Lombok generates the original four-argument constructor,
-  getters and balance setter. These signatures are preserved; the moved packages require updated
-  imports. Converting the model to a record would remove the mutation required by `updateBalance`.
+  getters and balance setter. These signatures are preserved; the only source-level break from the
+  move to `domain/` is the fully-qualified name, accepted as the repository owner's package
+  organization. No root-package compatibility shim is added: a `TimeDeposit` subclass cannot satisfy
+  `List<TimeDeposit>` callers because generics are invariant, and a shim calculator would clash by
+  erasure, so such a shim would be dead, partial code.
+  Converting the model to a record would remove the mutation required by `updateBalance`.
   Lombok is a compile-time dependency and is excluded from the executable JAR.
 - **Extensible calculations:** a map of `InterestRule` functions replaces nested plan conditionals.
   The default constructor retains the existing plans. An additional constructor accepts rules for
