@@ -4,11 +4,11 @@
 
 OpenAI Codex desktop was used with repository access and shell execution. The project brief,
 compatibility constraints, architecture boundaries and acceptance checks are maintained in
-[../AGENTS.md](../AGENTS.md). This is the repository's agent configuration; it requires no personal
+[AGENTS.md](AGENTS.md). This is the repository's agent configuration; it requires no personal
 rules, private prompts or additional agent framework.
 
-To repeat the workflow, clone this fork, open its root in a coding assistant that reads `AGENTS.md`,
-install a JDK 17+ and Docker, and follow [README.md](README.md). Maven and dependency versions are
+To repeat the workflow, clone this fork, open the `java` folder in a coding assistant that reads
+`AGENTS.md`, install a JDK 17+ and Docker, and follow [README.md](README.md). Maven and dependency versions are
 defined by `pom.xml` and the Maven Wrapper; database and Swagger image tags are pinned in Compose.
 
 The workflow is requirements analysis, characterization tests, focused implementation changes,
@@ -30,7 +30,7 @@ documented in [README.md](README.md#design-and-assumptions).
 Codex assisted with implementation, tests and documentation under these constraints. The working
 goal was faster routine implementation and broader exploration of boundary cases.
 The working
-agreement in [../AGENTS.md](../AGENTS.md) makes the scope, dependency boundaries and verification
+agreement in [AGENTS.md](AGENTS.md) makes the scope, dependency boundaries and verification
 requirements explicit. Changes were checked through characterization tests, PostgreSQL-backed
 integration tests and a live walkthrough of the startup and API commands.
 
